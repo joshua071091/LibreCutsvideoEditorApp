@@ -26,6 +26,19 @@ class VideoEditingViewModel : ViewModel() {
     private companion object {
         const val TAG = "VideoEditingViewModel"
         const val MAX_UNDO_STACK_SIZE = 30
+
+        // FFmpeg copies the input's global metadata into the output by default, so an
+        // exported clip keeps the source's GPS location, device make/model and capture
+        // time. Strip it from every user-facing export:
+        //   -map_metadata -1  drops the copied global tags (this is where Android's
+        //                     camera writes the location box)
+        //   -map_chapters -1  chapters are copied separately from metadata
+        //   -fflags +bitexact stops the muxer writing its own creation_time (the export
+        //                     timestamp) and encoder tag into the fresh file
+        // Per-stream metadata is deliberately left alone: some sources still signal
+        // rotation via the stream-level "rotate" tag, and dropping it would export
+        // sideways video. Stream side data (the display matrix) is unaffected either way.
+        const val STRIP_METADATA = "-map_metadata -1 -map_chapters -1 -fflags +bitexact"
     }
 
 
@@ -683,7 +696,7 @@ class VideoEditingViewModel : ViewModel() {
         }
 
         if (currentProject.operations.isEmpty()) {
-            return "-y -i \"$sourceFilePath\" -c copy \"$outputFilePath\""
+            return "-y -i \"$sourceFilePath\" -c copy $STRIP_METADATA \"$outputFilePath\""
         }
 
         val operations = currentProject.operations
@@ -1318,7 +1331,7 @@ class VideoEditingViewModel : ViewModel() {
             if (outputDuration != null) {
                 cmd.append(" -t $outputDuration")
             }
-            cmd.append(" \"$outputFilePath\"")
+            cmd.append(" $STRIP_METADATA \"$outputFilePath\"")
 
             val finalCommand = cmd.toString()
             Log.d(TAG, "Built merge command: $finalCommand")
@@ -1577,7 +1590,7 @@ class VideoEditingViewModel : ViewModel() {
         if (outputDuration != null) {
             cmd.append(" -t $outputDuration")
         }
-        cmd.append(" \"$outputFilePath\"")
+        cmd.append(" $STRIP_METADATA \"$outputFilePath\"")
 
         val finalCommand = cmd.toString()
         Log.d(TAG, "Built command: $finalCommand")
